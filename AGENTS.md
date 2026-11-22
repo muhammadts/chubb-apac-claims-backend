@@ -4,10 +4,23 @@ Implement the backend from `docs/Claims_Backend_Architecture_and_SQL_Server_Data
 
 ## Git workflow
 
-- Stage 0 creates `feature/claims-backend` from the latest `main`. Inspect the branch and working tree first, preserve user changes, and stop if a clean, current `main` cannot be established safely.
-- Keep every implementation stage on that branch. Do not create a branch per stage.
-- After each stage, stop and report changed files, exact checks and results, unfinished dependencies, and a suggested manual commit message. Wait for review and a manual commit before continuing.
-- Never commit, push, open or create a PR, merge, or alter Git remotes.
+Create a separate feature branch for each stage, from the latest `main`, after the previous stage's PR has been merged:
+
+| Stage | Branch |
+|---|---|
+| 0 — Foundation | `feature/foundation` |
+| 1 — Claims domain | `feature/claims-domain` |
+| 2 — CQRS application | `feature/cqrs-application` |
+| 3 — SQL Server infrastructure | `feature/sqlserver-infrastructure` |
+| 4 — Claimant API | `feature/claimant-api` |
+| 5 — Staff workflow | `feature/staff-workflow` |
+| 6 — JWT authorization | `feature/jwt-auth` |
+| 7 — Kafka outbox | `feature/kafka-outbox` |
+| 8 — Manager reporting | `feature/manager-reporting` |
+| 9 — Quality and deliverables | `feature/quality-deliverables` |
+
+At the end of each stage, Codex stops and reports changed files, exact checks run, and a suggested commit message. You review and commit the stage manually, then push the branch and create/merge its PR. Start the next stage only after its predecessor is merged to `main`. Codex must not commit, push, open/create a PR, merge, or start another stage.
+
 
 ## Architecture and scope
 
