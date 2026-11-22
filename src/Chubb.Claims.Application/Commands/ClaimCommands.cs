@@ -50,13 +50,32 @@ public abstract class ClaimCommandHandlerBase(IClaimUnitOfWork unitOfWork, ICurr
         string eventType, IReadOnlyDictionary<string, string> eventData, CancellationToken cancellationToken)
     {
         await tx.AddActivityAsync(new ClaimActivity(claim.Id, actor, at, activityType, visibility, summary), cancellationToken);
-        await tx.AddOutboxMessageAsync(new ClaimOutboxMessage(Guid.NewGuid(), claim.Id, eventType, 1, at, eventData), cancellationToken);
+        var integrationEvent = eventType switch
+        {
+            "ClaimAssessmentRecorded" or "ClaimSettlementCompleted" or "ClaimInformationResponseSubmitted" => "ClaimStatusChanged",
+            _ => eventType
+        };
+        if (IsPublishedEvent(integrationEvent))
+            await tx.AddOutboxMessageAsync(new ClaimOutboxMessage(Guid.NewGuid(), claim.Id, integrationEvent, 1, at,
+                SafeEventData(integrationEvent, eventData, claim)), cancellationToken);
         var version = await tx.CommitAsync(cancellationToken);
         return new ClaimCommandResult(claim.Id, claim.ClaimNumber, claim.Status, version);
     }
 
     protected static IReadOnlyDictionary<string, string> Data(params (string Key, string Value)[] values) =>
         values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+
+    private static bool IsPublishedEvent(string eventType) => eventType is "ClaimStatusChanged"
+        or "ClaimInformationRequested" or "ClaimDecisionRecorded";
+
+    private static IReadOnlyDictionary<string, string> SafeEventData(string eventType, IReadOnlyDictionary<string, string> data, Claim claim) =>
+        eventType switch
+        {
+            "ClaimStatusChanged" => new Dictionary<string, string> { ["claimId"] = claim.Id.ToString("D"), ["status"] = claim.Status.ToString() },
+            "ClaimInformationRequested" => new Dictionary<string, string> { ["claimId"] = data["claimId"], ["requestId"] = data["requestId"] },
+            "ClaimDecisionRecorded" => new Dictionary<string, string> { ["claimId"] = data["claimId"], ["decision"] = data["decision"], ["status"] = data["status"] },
+            _ => throw new ArgumentOutOfRangeException(nameof(eventType))
+        };
 
     protected static void RequireText(string value, string field)
     {
@@ -113,8 +132,7 @@ public sealed class AssignClaimHandler(IClaimUnitOfWork unitOfWork, ICurrentUser
         await tx.AddActivityAsync(new ClaimActivity(claim.Id, actor, now, "ClaimAssigned", ActivityVisibility.Staff,
             "Claim assignment updated."), cancellationToken);
         await tx.AddOutboxMessageAsync(new ClaimOutboxMessage(Guid.NewGuid(), claim.Id, "ClaimAssigned", 1, now,
-            new Dictionary<string, string> { ["claimId"] = claim.Id.ToString("D"), ["teamId"] = assignment.TeamId,
-                ["officerSubjectId"] = assignment.OfficerSubjectId ?? "" }), cancellationToken);
+            new Dictionary<string, string> { ["claimId"] = claim.Id.ToString("D"), ["teamId"] = assignment.TeamId }), cancellationToken);
         var version = await tx.CommitAsync(cancellationToken);
         return new ClaimCommandResult(claim.Id, claim.ClaimNumber, claim.Status, version);
     }

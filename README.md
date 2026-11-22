@@ -6,13 +6,13 @@ Backend foundation for the Chubb APAC claims assessment. The architecture and in
 
 - .NET 10 SDK
 - SQL Server for local development (SQL Server Developer or Express, or a local SQL Server instance)
-- A Kafka-compatible broker for later outbox publisher work; this foundation installs the client package but does not connect to a broker
+- A Kafka-compatible broker when the transactional outbox publisher is enabled
 
 ## Local configuration
 
 Copy `src/Chubb.Claims.Api/appsettings.example.json` to `src/Chubb.Claims.Api/appsettings.local.json` and replace the placeholders. This local file is loaded by the API and ignored by Git. Keep credentials and signing keys there, in user secrets, or in environment variables; never commit them. The example contains placeholders only.
 
-The API reads `ConnectionStrings:ClaimsDatabase` for SQL Server and `Claims:Kafka:BootstrapServers` for future publisher configuration. Kafka is intentionally not registered or contacted in this foundation stage.
+The API reads `ConnectionStrings:ClaimsDatabase` for SQL Server and `Claims:Kafka:BootstrapServers` for Kafka publisher configuration. Kafka publishing is disabled when bootstrap servers are absent or left as a placeholder.
 
 ## JWT authentication and authorization
 
@@ -60,3 +60,8 @@ dotnet run --project .\src\Chubb.Claims.Api
 ```
 
 The API exposes `GET /health`. In Development it also serves the generated OpenAPI document at `/openapi/v1.json`.
+# Kafka transactional outbox (demo)
+
+When `Claims:Kafka:BootstrapServers` is configured, the Infrastructure hosted publisher leases pending SQL Server outbox rows, sends each event to its configured topic, then marks it published after Kafka acknowledges the send. Local topics default to `claims.submitted.v1`, `claims.assigned.v1`, `claims.information-requested.v1`, `claims.status-changed.v1`, and `claims.decision-recorded.v1`; override them with `Claims:Kafka:Topics` configuration. The standalone local Compose broker listens at `localhost:9092`; start it with `docker compose -f compose.kafka.yaml up -d` and set `Claims__Kafka__BootstrapServers=localhost:9092`.
+
+This is at-least-once delivery. A process can stop after Kafka accepts an event but before SQL records the acknowledgement, so consumers must deduplicate by the envelope's stable `EventId`. No distributed transaction or exactly-once guarantee is used. Failed sends increment `AttemptCount`, record `LastError`, clear the lease, and retry with bounded exponential backoff. Expired leases are eligible for recovery by the next publisher. Event payloads are allowlisted and exclude claim narratives, contact details, document content, credentials, and internal notes. These topic names and the local broker settings are demo defaults.
