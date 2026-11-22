@@ -14,6 +14,14 @@ Copy `src/Chubb.Claims.Api/appsettings.example.json` to `src/Chubb.Claims.Api/ap
 
 The API reads `ConnectionStrings:ClaimsDatabase` for SQL Server and `Claims:Kafka:BootstrapServers` for future publisher configuration. Kafka is intentionally not registered or contacted in this foundation stage.
 
+## JWT authentication and authorization
+
+The API requires `Jwt:Issuer`, `Jwt:Audience`, and either `Jwt:Authority` (for trusted metadata and signing keys) or `Jwt:SigningKey` (a symmetric key of at least 32 UTF-8 bytes). `Jwt:ClockSkewSeconds` is optional and defaults to 60 (allowed range 0–300). JWT bearer validation checks issuer, audience, signature, and a required unexpired `exp`; missing required configuration stops API startup. Supply values through user secrets, environment variables such as `Jwt__SigningKey`, or the deployment's approved secret store. Never put real keys in tracked settings. The example file uses placeholders only.
+
+The API policies are `Claimant`, `ClaimsOfficer`, `Staff` (officer or manager), and `Manager`. The application also checks the signed stable `sub` subject, role, team, and market scopes for each use case. Claimants can access only claims whose stored claimant subject matches `sub`. Staff must carry `team`/`teams` and `market`/`markets` claims whose values grant the relevant scope. Manager reports pass both scopes to the query store.
+
+No identity provider is selected or token issuer included. A future external provider must issue signed access tokens for this API's configured audience, with the configured issuer, a stable non-reassignable subject in `sub`, and role values `Claimant`, `ClaimsOfficer`, or `Manager`. Staff tokens must also carry authorized team and market scope claims. Validate the actual provider's role mapping and scope lifecycle before deployment; do not trust client-supplied headers or request fields as identity. The test authentication handler is compiled only into the test project.
+
 ## SQL Server persistence
 
 Infrastructure uses EF Core 10 with Microsoft SQL Server. The initial EF migration creates exactly 20 assessment tables: the 19 claim/reference/workflow tables plus `OutboxMessages`. `IdempotencyRecords` is not included because submission idempotency has not been implemented. Policy administration and persisted reporting tables are outside this scope; `Claims.PolicyNumber` remains an external reference. Claim documents contain metadata and an object storage key only.

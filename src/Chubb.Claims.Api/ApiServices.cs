@@ -17,6 +17,8 @@ public sealed class HttpCurrentUserContext(IHttpContextAccessor accessor) : ICur
             .Where(role => role.HasValue).Select(role => role!.Value).ToHashSet()) ?? new HashSet<ApplicationRole>();
     public IReadOnlySet<string> TeamIds => (Principal?.FindAll("team").Concat(Principal.FindAll("teams"))
             .Select(claim => claim.Value).ToHashSet(StringComparer.Ordinal)) ?? new HashSet<string>(StringComparer.Ordinal);
+    public IReadOnlySet<string> MarketCodes => (Principal?.FindAll("market").Concat(Principal.FindAll("markets"))
+            .Select(claim => claim.Value).ToHashSet(StringComparer.OrdinalIgnoreCase)) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class SystemClock : IClock { public DateTimeOffset UtcNow => DateTimeOffset.UtcNow; }
@@ -50,6 +52,9 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IQueryHandler<GetClaimantHistory, PageResult<ClaimantHistoryItem>>, GetClaimantHistoryHandler>();
         services.AddScoped<IQueryHandler<ListStaffWorkQueue, PageResult<StaffClaimCard>>, ListStaffWorkQueueHandler>();
         services.AddScoped<IQueryHandler<GetStaffClaim, StaffClaimDetail>, GetStaffClaimHandler>();
+        services.AddScoped<IQueryHandler<GetManagerWorkload, ManagerWorkloadSummary>, GetManagerWorkloadHandler>();
+        services.AddScoped<IQueryHandler<GetManagerPerformance, ManagerPerformanceSummary>, GetManagerPerformanceHandler>();
+        services.AddScoped<IQueryHandler<GetManagerExposure, ManagerExposureSummary>, GetManagerExposureHandler>();
         return services;
     }
 }

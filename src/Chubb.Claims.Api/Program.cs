@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
 using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
@@ -16,6 +17,8 @@ builder.Configuration.AddCommandLine(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole();
 
+var jwt = JwtRuntimeOptions.Read(builder.Configuration);
+
 builder.Services.Configure<ClaimsRuntimeOptions>(
     builder.Configuration.GetSection(ClaimsRuntimeOptions.SectionName));
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -24,17 +27,31 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.MapInboundClaims = false;
-        options.TokenValidationParameters.RoleClaimType = "role";
-        options.Authority = builder.Configuration["Jwt:Authority"];
-        options.Audience = builder.Configuration["Jwt:Audience"];
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwt.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwt.Audience,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = jwt.SigningKey is null ? null : new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey)),
+            RoleClaimType = "role",
+            NameClaimType = "sub",
+            ClockSkew = TimeSpan.FromSeconds(jwt.ClockSkewSeconds)
+        };
+        options.Authority = jwt.Authority;
+        options.ClaimsIssuer = jwt.Issuer;
         options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
     });
-builder.Services.AddAuthorization(options => options.AddPolicy("Claimant", policy =>
+builder.Services.AddAuthorization(options =>
 {
-    policy.RequireAuthenticatedUser();
-    policy.RequireRole("Claimant");
-    policy.RequireClaim("sub");
-}));
+    options.AddPolicy("Claimant", policy => policy.RequireAuthenticatedUser().RequireRole("Claimant").RequireClaim("sub"));
+    options.AddPolicy("ClaimsOfficer", policy => policy.RequireAuthenticatedUser().RequireRole("ClaimsOfficer").RequireClaim("sub"));
+    options.AddPolicy("Staff", policy => policy.RequireAuthenticatedUser().RequireRole("ClaimsOfficer", "Manager").RequireClaim("sub"));
+    options.AddPolicy("Manager", policy => policy.RequireAuthenticatedUser().RequireRole("Manager").RequireClaim("sub"));
+});
 builder.Services.AddControllers().AddJsonOptions(options =>
     options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddProblemDetails();
@@ -115,4 +132,25 @@ public sealed class ClaimsRuntimeOptions
 public sealed class KafkaRuntimeOptions
 {
     public string? BootstrapServers { get; set; }
+}
+
+public sealed record JwtRuntimeOptions(string Issuer, string Audience, string? Authority, string? SigningKey, int ClockSkewSeconds)
+{
+    public static JwtRuntimeOptions Read(IConfiguration configuration)
+    {
+        var issuer = configuration["Jwt:Issuer"];
+        var audience = configuration["Jwt:Audience"];
+        var authority = configuration["Jwt:Authority"];
+        var signingKey = configuration["Jwt:SigningKey"];
+        if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(audience)
+            || (string.IsNullOrWhiteSpace(authority) && string.IsNullOrWhiteSpace(signingKey)))
+            throw new InvalidOperationException("JWT configuration requires Jwt:Issuer, Jwt:Audience, and either Jwt:Authority or Jwt:SigningKey.");
+        if (!string.IsNullOrWhiteSpace(signingKey) && Encoding.UTF8.GetByteCount(signingKey) < 32)
+            throw new InvalidOperationException("Jwt:SigningKey must contain at least 32 UTF-8 bytes.");
+        var skewText = configuration["Jwt:ClockSkewSeconds"];
+        var skew = string.IsNullOrWhiteSpace(skewText) ? 60 : int.TryParse(skewText, out var parsed) ? parsed : -1;
+        if (skew is < 0 or > 300) throw new InvalidOperationException("Jwt:ClockSkewSeconds must be between 0 and 300.");
+        return new(issuer.Trim(), audience.Trim(), string.IsNullOrWhiteSpace(authority) ? null : authority.Trim(),
+            string.IsNullOrWhiteSpace(signingKey) ? null : signingKey, skew);
+    }
 }

@@ -12,7 +12,7 @@ using AppValidationException = Chubb.Claims.Application.Abstractions.ValidationE
 namespace Chubb.Claims.Api;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = "Staff")]
 [Route("api/v1/staff/claims")]
 public sealed class StaffClaimsController(
     IQueryHandler<ListStaffWorkQueue, PageResult<StaffClaimCard>> queue,
@@ -53,22 +53,29 @@ public sealed class StaffClaimsController(
     public Task<IActionResult> Assign(Guid id, [FromBody] AssignmentRequest r, CancellationToken ct) => Mutate(
         assign.HandleAsync(new AssignClaim(id, ReadEtag(), r.TeamId, r.OfficerSubjectId, r.Reason), ct));
     [HttpPost("{id:guid}/review")]
+    [Authorize(Policy = "ClaimsOfficer")]
     public Task<IActionResult> StartReview(Guid id, CancellationToken ct) => Mutate(start.HandleAsync(new StartReview(id, ReadEtag()), ct));
     [HttpPost("{id:guid}/information-requests")]
+    [Authorize(Policy = "ClaimsOfficer")]
     public Task<IActionResult> RequestInformation(Guid id, [FromBody] InformationRequest r, CancellationToken ct) => Mutate(
         requestInformation.HandleAsync(new RequestInformation(id, ReadEtag(), r.Question), ct));
     [HttpPost("{id:guid}/resume-review")]
+    [Authorize(Policy = "ClaimsOfficer")]
     public Task<IActionResult> ResumeReview(Guid id, CancellationToken ct) => Mutate(resume.HandleAsync(new ResumeReview(id, ReadEtag()), ct));
     [HttpPost("{id:guid}/assessments")]
+    [Authorize(Policy = "ClaimsOfficer")]
     public Task<IActionResult> RecordAssessment(Guid id, [FromBody] AssessmentRequest r, CancellationToken ct) => Mutate(
         assess.HandleAsync(new RecordAssessment(id, ReadEtag(), r.AssessmentType, r.Rationale, r.Recommendation, r.ReserveEstimate, r.ReserveReason), ct));
     [HttpPost("{id:guid}/decision")]
+    [Authorize(Policy = "ClaimsOfficer")]
     public Task<IActionResult> Decide(Guid id, [FromBody] DecisionRequest r, CancellationToken ct) => Mutate(
         decide.HandleAsync(new RecordFinalDecision(id, ReadEtag(), r.Type, r.Reason, r.Amount), ct));
     [HttpPost("{id:guid}/internal-notes")]
+    [Authorize(Policy = "ClaimsOfficer")]
     public Task<IActionResult> AddNote(Guid id, [FromBody] NoteRequest r, CancellationToken ct) => Mutate(
         note.HandleAsync(new AddInternalNote(id, ReadEtag(), r.NoteText), ct));
     [HttpPost("{id:guid}/settlement-workflow")]
+    [Authorize(Policy = "ClaimsOfficer")]
     public Task<IActionResult> CompleteSettlement(Guid id, [FromBody] SettlementRequest r, CancellationToken ct) => Mutate(
         settle.HandleAsync(new CompleteSettlementWorkflow(id, ReadEtag(), r.Amount, r.Reference), ct));
 

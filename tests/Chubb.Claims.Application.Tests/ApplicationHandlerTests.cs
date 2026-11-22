@@ -161,7 +161,8 @@ public sealed class ApplicationHandlerTests
 
     private sealed class FixedClock(DateTimeOffset value) : IClock { public DateTimeOffset UtcNow => value; }
     private sealed class ClaimNumbers : IClaimNumberGenerator { public string NextClaimNumber(DateTimeOffset submittedAt) => "CLM-TEST-1"; }
-    private sealed record FakeUser(string? SubjectId, IReadOnlySet<ApplicationRole> Roles, IReadOnlySet<string> TeamIds) : ICurrentUserContext;
+    private sealed record FakeUser(string? SubjectId, IReadOnlySet<ApplicationRole> Roles, IReadOnlySet<string> TeamIds) : ICurrentUserContext
+    { public IReadOnlySet<string> MarketCodes { get; } = new HashSet<string>(["SGP", "XXX"], StringComparer.OrdinalIgnoreCase); }
 
     private sealed class FakeQueryStore : IClaimQueryStore
     {
@@ -171,9 +172,9 @@ public sealed class ApplicationHandlerTests
         public Task<PageResult<ClaimantHistoryRecord>> ListClaimantHistoryAsync(Guid id, PageRequest page, CancellationToken cancellationToken = default) => Task.FromResult(new PageResult<ClaimantHistoryRecord>([], null));
         public Task<StaffClaimRecord?> FindStaffClaimAsync(Guid id, IReadOnlySet<string> teams, CancellationToken cancellationToken = default) => Task.FromResult<StaffClaimRecord?>(null);
         public Task<PageResult<StaffQueueRecord>> ListStaffQueueAsync(WorkQueueFilter filter, IReadOnlySet<string> teams, PageRequest page, CancellationToken cancellationToken = default) => Task.FromResult(new PageResult<StaffQueueRecord>([], null));
-        public Task<ManagerWorkloadSummary> GetManagerWorkloadAsync(IReadOnlySet<string> teams, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<ManagerPerformanceSummary> GetManagerPerformanceAsync(IReadOnlySet<string> teams, DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public Task<ManagerExposureSummary> GetManagerExposureAsync(IReadOnlySet<string> teams, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<ManagerWorkloadSummary> GetManagerWorkloadAsync(IReadOnlySet<string> teams, IReadOnlySet<string> markets, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<ManagerPerformanceSummary> GetManagerPerformanceAsync(IReadOnlySet<string> teams, IReadOnlySet<string> markets, DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<ManagerExposureSummary> GetManagerExposureAsync(IReadOnlySet<string> teams, IReadOnlySet<string> markets, CancellationToken cancellationToken = default) => throw new NotImplementedException();
     }
 
     private sealed class InMemoryUnitOfWork : IClaimUnitOfWork

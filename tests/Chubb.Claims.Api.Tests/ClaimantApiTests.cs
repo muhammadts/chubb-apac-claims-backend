@@ -130,6 +130,61 @@ public sealed class ClaimantApiTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Staff_queue_allows_claims_officer()
+    {
+        await using var factory = new TestApiFactory(new MemoryUnitOfWork(), new MemoryQueryStore());
+        using var client = AuthenticatedClient(factory, "officer-1");
+        client.DefaultRequestHeaders.Remove("X-Test-Role");
+        client.DefaultRequestHeaders.Add("X-Test-Role", "ClaimsOfficer");
+        using var response = await client.GetAsync("/api/v1/staff/claims");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Manager_reporting_forbids_claims_officer()
+    {
+        await using var factory = new TestApiFactory(new MemoryUnitOfWork(), new MemoryQueryStore());
+        using var client = AuthenticatedClient(factory, "officer-1");
+        client.DefaultRequestHeaders.Remove("X-Test-Role");
+        client.DefaultRequestHeaders.Add("X-Test-Role", "ClaimsOfficer");
+        using var response = await client.GetAsync("/api/v1/manager/workload");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Manager_reporting_requires_manager_role()
+    {
+        await using var factory = new TestApiFactory(new MemoryUnitOfWork(), new MemoryQueryStore());
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/api/v1/manager/workload");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Manager_can_access_scoped_reporting()
+    {
+        await using var factory = new TestApiFactory(new MemoryUnitOfWork(), new MemoryQueryStore());
+        using var client = AuthenticatedClient(factory, "manager-1");
+        client.DefaultRequestHeaders.Remove("X-Test-Role");
+        client.DefaultRequestHeaders.Add("X-Test-Role", "Manager");
+        using var response = await client.GetAsync("/api/v1/manager/workload");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Claimant_cannot_submit_for_a_market_outside_token_scope()
+    {
+        var unit = new MemoryUnitOfWork();
+        await using var factory = new TestApiFactory(unit, new MemoryQueryStore());
+        using var client = AuthenticatedClient(factory, "claimant-a");
+        using var response = await client.PostAsync("/api/v1/claims", Json("""
+            {"marketCode":"JPN","lineOfBusiness":"Motor","contact":{"name":"Demo Claimant","email":"claimant@example.test"},"incident":{"occurredAt":"2026-11-01T09:00:00+08:00","description":"Demo incident"},"motor":{"make":"Example","model":"One"}}
+            """));
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(unit.AddedClaim);
+    }
+
     private static HttpClient AuthenticatedClient(TestApiFactory factory, string subject)
     {
         var client = factory.CreateClient();
@@ -161,6 +216,9 @@ public sealed class ClaimantApiTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
+            builder.UseSetting("Jwt:Issuer", "https://issuer.example.test");
+            builder.UseSetting("Jwt:Audience", "claims-api");
+            builder.UseSetting("Jwt:Authority", "https://issuer.example.test");
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IClaimUnitOfWork>();
@@ -179,7 +237,7 @@ public sealed class ClaimantApiTests
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             if (!Request.Headers.TryGetValue("X-Test-Subject", out var subject)) return Task.FromResult(AuthenticateResult.NoResult());
-            var claims = new[] { new System.Security.Claims.Claim("sub", subject.ToString()), new System.Security.Claims.Claim(ClaimTypes.Role, Request.Headers["X-Test-Role"].ToString()) };
+            var claims = new[] { new System.Security.Claims.Claim("sub", subject.ToString()), new System.Security.Claims.Claim(ClaimTypes.Role, Request.Headers["X-Test-Role"].ToString()), new System.Security.Claims.Claim("team", "team-a"), new System.Security.Claims.Claim("market", "SGP") };
             var identity = new ClaimsIdentity(claims, "Test", ClaimTypes.Name, ClaimTypes.Role);
             return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), "Test")));
         }
@@ -193,9 +251,9 @@ public sealed class ClaimantApiTests
         public Task<PageResult<ClaimantHistoryRecord>> ListClaimantHistoryAsync(Guid id, PageRequest page, CancellationToken token = default) => Task.FromResult(new PageResult<ClaimantHistoryRecord>([], null));
         public Task<StaffClaimRecord?> FindStaffClaimAsync(Guid id, IReadOnlySet<string> teams, CancellationToken token = default) => Task.FromResult<StaffClaimRecord?>(null);
         public Task<PageResult<StaffQueueRecord>> ListStaffQueueAsync(WorkQueueFilter filter, IReadOnlySet<string> teams, PageRequest page, CancellationToken token = default) => Task.FromResult(new PageResult<StaffQueueRecord>([], null));
-        public Task<ManagerWorkloadSummary> GetManagerWorkloadAsync(IReadOnlySet<string> teams, CancellationToken token = default) => throw new NotImplementedException();
-        public Task<ManagerPerformanceSummary> GetManagerPerformanceAsync(IReadOnlySet<string> teams, DateTimeOffset from, DateTimeOffset to, CancellationToken token = default) => throw new NotImplementedException();
-        public Task<ManagerExposureSummary> GetManagerExposureAsync(IReadOnlySet<string> teams, CancellationToken token = default) => throw new NotImplementedException();
+        public Task<ManagerWorkloadSummary> GetManagerWorkloadAsync(IReadOnlySet<string> teams, IReadOnlySet<string> markets, CancellationToken token = default) => Task.FromResult(new ManagerWorkloadSummary(At, [], "Demo elapsed-day bands."));
+        public Task<ManagerPerformanceSummary> GetManagerPerformanceAsync(IReadOnlySet<string> teams, IReadOnlySet<string> markets, DateTimeOffset from, DateTimeOffset to, CancellationToken token = default) => throw new NotImplementedException();
+        public Task<ManagerExposureSummary> GetManagerExposureAsync(IReadOnlySet<string> teams, IReadOnlySet<string> markets, CancellationToken token = default) => throw new NotImplementedException();
     }
 
     private sealed class MemoryUnitOfWork : IClaimUnitOfWork
