@@ -1,0 +1,6 @@
+@Chubb.Claims.Api_HostAddress = http://localhost:5289
+
+GET {{Chubb.Claims.Api_HostAddress}}/health
+Accept: application/json
+
+###
