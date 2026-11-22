@@ -14,6 +14,34 @@ Copy `src/Chubb.Claims.Api/appsettings.example.json` to `src/Chubb.Claims.Api/ap
 
 The API reads `ConnectionStrings:ClaimsDatabase` for SQL Server and `Claims:Kafka:BootstrapServers` for future publisher configuration. Kafka is intentionally not registered or contacted in this foundation stage.
 
+## SQL Server persistence
+
+Infrastructure uses EF Core 10 with Microsoft SQL Server. The initial EF migration creates exactly 20 assessment tables: the 19 claim/reference/workflow tables plus `OutboxMessages`. `IdempotencyRecords` is not included because submission idempotency has not been implemented. Policy administration and persisted reporting tables are outside this scope; `Claims.PolicyNumber` remains an external reference. Claim documents contain metadata and an object storage key only.
+
+For local development, Docker Compose starts a SQL Server Developer instance. Set a strong local password in the shell; do not put it in a tracked file:
+
+```powershell
+$env:MSSQL_SA_PASSWORD = Read-Host "Enter a strong local SQL Server SA password"
+docker compose up -d sqlserver
+```
+
+Create the local `Claims` database separately in that SQL Server instance, then configure the API connection in the current shell:
+
+```powershell
+$env:ConnectionStrings__ClaimsDatabase = "Server=localhost,1433;Database=Claims;User Id=sa;Password=$env:MSSQL_SA_PASSWORD;Encrypt=True;TrustServerCertificate=True"
+```
+
+On provisioned SQL Server, set `ConnectionStrings__ClaimsDatabase` with that server's host, existing database name, approved authentication mode, encryption, and trust settings through environment variables, user secrets, or an approved secret store. Do not put credentials in `appsettings.json` or commit them.
+
+The migration changes schema inside an existing database. It does not provision a SQL Server instance or a database resource. Two scripts generated from the EF migration are checked in under `database/scripts/`:
+
+- `001-initial-claims-schema.sql` applies the migration from an empty database.
+- `001-initial-claims-schema-idempotent.sql` checks EF's migration history and is suitable for a separately provisioned SQL Server database.
+
+Apply the idempotent script with `sqlcmd -S <server> -d <existing-database> -E -i database/scripts/001-initial-claims-schema-idempotent.sql` for integrated authentication, or use the authentication options approved for that server. To regenerate scripts after an EF migration, set `CLAIMS_DATABASE_CONNECTION` in the current shell, then run `dotnet tool restore` and `dotnet tool run dotnet-ef migrations script 0 --project src/Chubb.Claims.Infrastructure --startup-project src/Chubb.Claims.Infrastructure --output database/scripts/001-initial-claims-schema.sql` followed by the same command with `--idempotent` and the idempotent output path. The tool manifest pins EF tooling, and the design-time factory reads only `CLAIMS_DATABASE_CONNECTION`.
+
+Before claim submission is enabled in a deployment, provision the approved `Markets` reference rows and the relevant teams/staff metadata. Market codes, currencies, time zones, and market rules are business inputs and are deliberately not seeded here. Claims, workflow history, activities, and outbox messages are saved in one SQL transaction with rowversion concurrency.
+
 ## Build and run
 
 ```powershell

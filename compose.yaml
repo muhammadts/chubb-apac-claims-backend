@@ -1,0 +1,14 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?Set MSSQL_SA_PASSWORD in your shell before starting Compose}
+    ports:
+      - "1433:1433"
+    volumes:
+      - claims-sqlserver-data:/var/opt/mssql
+
+volumes:
+  claims-sqlserver-data:
