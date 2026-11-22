@@ -51,7 +51,7 @@ public sealed class ApplicationHandlerTests
     }
 
     [Fact]
-    public async Task AssessmentReserveActivityAndIntegrationEventShareOneCommit()
+    public async Task AssessmentReserveAndActivityShareOneCommitWithoutSensitiveIntegrationEvent()
     {
         var claim = CreateClaim();
         claim.Assign(new ClaimAssignment("team-a", "officer-1", "manager-a", Now));
@@ -66,7 +66,7 @@ public sealed class ApplicationHandlerTests
         Assert.Equal(1, uow.CommitCount);
         Assert.Equal(2, uow.WorkflowRecords.Count);
         Assert.Equal("AssessmentRecorded", uow.Activities.Single().ActivityType);
-        Assert.Equal("ClaimAssessmentRecorded", uow.OutboxMessages.Single().EventType);
+        Assert.Equal("ClaimStatusChanged", Assert.Single(uow.OutboxMessages).EventType);
         Assert.DoesNotContain("Synthetic rationale.", string.Join(";", uow.OutboxMessages.Single().Data.Values));
     }
 
