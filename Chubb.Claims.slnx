@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Chubb.Claims.Api/Chubb.Claims.Api.csproj" />
+    <Project Path="src/Chubb.Claims.Application/Chubb.Claims.Application.csproj" />
+    <Project Path="src/Chubb.Claims.Domain/Chubb.Claims.Domain.csproj" />
+    <Project Path="src/Chubb.Claims.Infrastructure/Chubb.Claims.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Chubb.Claims.Api.Tests/Chubb.Claims.Api.Tests.csproj" />
+    <Project Path="tests/Chubb.Claims.Application.Tests/Chubb.Claims.Application.Tests.csproj" />
+    <Project Path="tests/Chubb.Claims.Domain.Tests/Chubb.Claims.Domain.Tests.csproj" />
+  </Folder>
+</Solution>
