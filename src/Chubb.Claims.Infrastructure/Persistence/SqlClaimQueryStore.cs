@@ -62,21 +62,25 @@ public sealed class SqlClaimQueryStore(ClaimsDbContext db) : IClaimQueryStore
     public async Task<ManagerWorkloadSummary> GetManagerWorkloadAsync(IReadOnlySet<string> teamIds, IReadOnlySet<string> marketCodes, CancellationToken cancellationToken = default)
     {
         var teams = ParseTeams(teamIds); var now = DateTimeOffset.UtcNow;
-        var rows = await StaffClaims(teams).Where(x => marketCodes.Contains(x.MarketCode) && x.Status != ClaimStatus.Rejected && x.Status != ClaimStatus.Settled).ToListAsync(cancellationToken);
-        var groups = rows.GroupBy(x => (x.MarketCode, Team: Active(x)?.TeamId.ToString("D"), Officer: Active(x)?.OfficerSubjectId))
+        var included = ManagerReportingRules.CurrentStatuses.ToArray();
+        var rows = await db.Claims.AsNoTracking().Where(c => marketCodes.Contains(c.MarketCode) && included.Contains(c.Status)
+                && (!c.Assignments.Any(a => a.UnassignedUtc == null) || c.Assignments.Any(a => a.UnassignedUtc == null && teams.Contains(a.TeamId))))
+            .Select(c => new { c.MarketCode, c.Status, c.SubmittedUtc, TeamId = c.Assignments.Where(a => a.UnassignedUtc == null).Select(a => (Guid?)a.TeamId).FirstOrDefault(), Officer = c.Assignments.Where(a => a.UnassignedUtc == null).Select(a => a.OfficerSubjectId).FirstOrDefault() })
+            .ToListAsync(cancellationToken);
+        var groups = rows.GroupBy(x => (x.MarketCode, Team: x.TeamId == null ? null : x.TeamId.Value.ToString("D"), x.Officer))
             .Select(g => new WorkloadGroup(g.Key.MarketCode, g.Key.Team, g.Key.Officer,
                 g.GroupBy(x => x.Status).Select(s => new StatusCount(s.Key, s.Count())).ToArray(),
-                g.Count(x => Active(x)?.OfficerSubjectId is null),
-                new Dictionary<string, int> { ["0-7 days"] = g.Count(x => Age(now, x.SubmittedUtc) <= 7), ["8-30 days"] = g.Count(x => Age(now, x.SubmittedUtc) is > 7 and <= 30), ["31-90 days"] = g.Count(x => Age(now, x.SubmittedUtc) is > 30 and <= 90), ["90+ days"] = g.Count(x => Age(now, x.SubmittedUtc) > 90) })).ToArray();
-        return new(now, groups, "Elapsed UTC days since submission: 0-7, 8-30, 31-90, 90+; reporting bands, not SLAs.");
+                g.Count(x => x.Officer is null),
+                new Dictionary<string, int> { ["0-7 days"] = g.Count(x => ManagerReportingRules.AgeBand(now, x.SubmittedUtc) == "0-7 days"), ["8-30 days"] = g.Count(x => ManagerReportingRules.AgeBand(now, x.SubmittedUtc) == "8-30 days"), ["31-90 days"] = g.Count(x => ManagerReportingRules.AgeBand(now, x.SubmittedUtc) == "31-90 days"), ["90+ days"] = g.Count(x => ManagerReportingRules.AgeBand(now, x.SubmittedUtc) == "90+ days") })).ToArray();
+        return new(now, groups, "Included current statuses: Submitted, InReview, Assessment, AwaitingInformation, Approved. Excluded: Rejected, Settled. Elapsed UTC days since submission: 0-7, 8-30, 31-90, 90+; demo reporting bands, not SLAs.");
     }
 
     public async Task<ManagerPerformanceSummary> GetManagerPerformanceAsync(IReadOnlySet<string> teamIds, IReadOnlySet<string> marketCodes, DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default)
     {
         var teams = ParseTeams(teamIds);
-        var decisions = await db.ClaimDecisions.AsNoTracking().Where(d => d.DecidedUtc >= fromUtc && d.DecidedUtc < toUtc && marketCodes.Contains(d.Claim.MarketCode) && d.Claim.Assignments.Any(a => a.UnassignedUtc == null && teams.Contains(a.TeamId)))
+        var decisions = await db.ClaimDecisions.AsNoTracking().Where(d => d.DecidedUtc >= fromUtc && d.DecidedUtc < toUtc && marketCodes.Contains(d.Claim.MarketCode) && d.Claim.Assignments.Any(a => teams.Contains(a.TeamId)))
             .Select(d => new { d.DecidedUtc, d.Claim.SubmittedUtc }).ToListAsync(cancellationToken);
-        var settlements = await db.ClaimSettlements.AsNoTracking().Where(s => s.CompletedUtc >= fromUtc && s.CompletedUtc < toUtc && marketCodes.Contains(s.Claim.MarketCode) && s.Claim.Assignments.Any(a => a.TeamId != Guid.Empty && teams.Contains(a.TeamId)))
+        var settlements = await db.ClaimSettlements.AsNoTracking().Where(s => s.CompletedUtc >= fromUtc && s.CompletedUtc < toUtc && marketCodes.Contains(s.Claim.MarketCode) && s.Claim.Assignments.Any(a => teams.Contains(a.TeamId)))
             .Select(s => new { CompletedUtc = s.CompletedUtc!.Value, s.Claim.SubmittedUtc }).ToListAsync(cancellationToken);
         var dDays = decisions.Select(x => (x.DecidedUtc - x.SubmittedUtc).TotalDays).ToArray(); var sDays = settlements.Select(x => (x.CompletedUtc - x.SubmittedUtc).TotalDays).ToArray();
         return new(fromUtc, toUtc, decisions.Count, Avg(dDays), Median(dDays), 0, settlements.Count, Avg(sDays), 0);
@@ -84,19 +88,22 @@ public sealed class SqlClaimQueryStore(ClaimsDbContext db) : IClaimQueryStore
 
     public async Task<ManagerExposureSummary> GetManagerExposureAsync(IReadOnlySet<string> teamIds, IReadOnlySet<string> marketCodes, CancellationToken cancellationToken = default)
     {
-        var included = new[] { ClaimStatus.Submitted, ClaimStatus.InReview, ClaimStatus.Assessment, ClaimStatus.AwaitingInformation, ClaimStatus.Approved };
+        var included = ManagerReportingRules.CurrentStatuses.ToArray();
         var teams = ParseTeams(teamIds); var now = DateTimeOffset.UtcNow;
-        var rows = await StaffClaims(teams).Where(x => marketCodes.Contains(x.MarketCode) && included.Contains(x.Status)).ToListAsync(cancellationToken);
-        var groups = rows.Where(x => x.CurrentReserveAmount.HasValue && x.CurrentReserveCurrency != null)
-            .GroupBy(x => (x.MarketCode, Currency: x.CurrentReserveCurrency!)).Select(g => new ExposureGroup(g.Key.MarketCode, g.Key.Currency, g.Sum(x => x.CurrentReserveAmount!.Value), g.Count())).ToArray();
-        return new(now, groups, rows.Count(x => x.CurrentReserveAmount is null), included, "Demo reserve estimate only; grouped by market and currency, with no FX conversion.");
+        var query = db.Claims.AsNoTracking().Where(x => marketCodes.Contains(x.MarketCode) && included.Contains(x.Status)
+            && (!x.Assignments.Any(a => a.UnassignedUtc == null) || x.Assignments.Any(a => a.UnassignedUtc == null && teams.Contains(a.TeamId))));
+        var aggregates = await query.Where(x => x.CurrentReserveAmount != null && x.CurrentReserveCurrency != null)
+            .GroupBy(x => new { x.MarketCode, Currency = x.CurrentReserveCurrency! })
+            .Select(g => new ExposureGroup(g.Key.MarketCode, g.Key.Currency, g.Sum(x => x.CurrentReserveAmount!.Value), g.Count()))
+            .ToArrayAsync(cancellationToken);
+        var missing = await query.CountAsync(x => x.CurrentReserveAmount == null || x.CurrentReserveCurrency == null, cancellationToken);
+        return new(now, aggregates, missing, included, "Operational estimate from current reserve estimates only; included statuses: Submitted, InReview, Assessment, AwaitingInformation, Approved; excluded: Rejected, Settled. Grouped separately by market and currency; no FX conversion or booked liability. Demo status scope.");
     }
 
     private IQueryable<ClaimRow> BaseClaims() => db.Claims.AsNoTracking().Include(x => x.MotorDetails).Include(x => x.PropertyDetails).Include(x => x.Assignments.Where(a => a.UnassignedUtc == null)).Include(x => x.InformationRequests).ThenInclude(x => x.Responses).Include(x => x.Decision).Include(x => x.Activities.Where(a => a.Visibility != ActivityVisibility.Staff));
     private IQueryable<ClaimRow> StaffClaims(Guid[] teams) => db.Claims.AsNoTracking().Include(x => x.MotorDetails).Include(x => x.PropertyDetails).Include(x => x.Assignments).Include(x => x.Decision).Include(x => x.Assessments).Include(x => x.ReserveHistory).Include(x => x.Notes).Include(x => x.Activities).Where(x => x.Assignments.Any(a => a.UnassignedUtc == null && teams.Contains(a.TeamId)));
     private static ClaimAssignmentRow? Active(ClaimRow x) => x.Assignments.SingleOrDefault(a => a.UnassignedUtc == null);
     private static Guid[] ParseTeams(IReadOnlySet<string> teams) => teams.Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty).Where(x => x != Guid.Empty).ToArray();
-    private static int Age(DateTimeOffset now, DateTimeOffset start) => Math.Max(0, (int)(now - start).TotalDays);
     private static double? Avg(double[] v) => v.Length == 0 ? null : v.Average();
     private static double? Median(double[] v) { if (v.Length == 0) return null; var s = v.Order().ToArray(); return s.Length % 2 == 1 ? s[s.Length / 2] : (s[s.Length / 2 - 1] + s[s.Length / 2]) / 2; }
     private static string Version(ClaimRow x) => Convert.ToBase64String(x.RowVersion);

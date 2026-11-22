@@ -610,3 +610,32 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261122134648_ManagerReportingIndexes'
+)
+BEGIN
+    CREATE INDEX [IX_ClaimSettlements_CompletedUtc_ClaimId] ON [dbo].[ClaimSettlements] ([CompletedUtc], [ClaimId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261122134648_ManagerReportingIndexes'
+)
+BEGIN
+    CREATE INDEX [IX_ClaimDecisions_DecidedUtc_ClaimId] ON [dbo].[ClaimDecisions] ([DecidedUtc], [ClaimId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261122134648_ManagerReportingIndexes'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261122134648_ManagerReportingIndexes', N'10.0.14');
+END;
+
+COMMIT;
+GO
+
