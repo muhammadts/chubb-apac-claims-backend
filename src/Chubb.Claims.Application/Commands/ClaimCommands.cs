@@ -28,7 +28,8 @@ public abstract class ClaimCommandHandlerBase(IClaimUnitOfWork unitOfWork, ICurr
         Guid claimId, string version, CancellationToken cancellationToken)
     {
         _ = Authorization.RequireVersion(version);
-        Authorization.RequireRole(User, ApplicationRole.ClaimsOfficer);
+        if (!User.Roles.Contains(ApplicationRole.ClaimsOfficer) && !User.Roles.Contains(ApplicationRole.Manager))
+            throw new AccessDeniedException("ClaimsOfficer or Manager role is required.");
         var actor = Authorization.RequireSubject(User);
         var tx = await UnitOfWork.BeginAsync(cancellationToken);
         try

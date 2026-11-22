@@ -115,6 +115,36 @@ public sealed class ApplicationHandlerTests
         Assert.Contains("Decision", staffProperties);
     }
 
+    [Fact]
+    public async Task StaffLifecycleReturnsConflictForInvalidTransitionAndStaleVersion()
+    {
+        var claim = CreateClaim();
+        claim.Assign(new ClaimAssignment("team-a", "officer-a", "manager-a", Now));
+        claim.StartReview("officer-a");
+        var unit = new InMemoryUnitOfWork(claim);
+        var handler = new StartReviewHandler(unit, User("officer-a", ApplicationRole.ClaimsOfficer, "team-a"), new FixedClock(Now));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(new StartReview(claim.Id, "v1")));
+        Assert.Equal(0, unit.CommitCount);
+
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(() => handler.HandleAsync(new StartReview(claim.Id, "stale")));
+        Assert.Equal(0, unit.CommitCount);
+    }
+
+    [Fact]
+    public async Task AssignmentRequiresStaffRoleAndPersistsAssignmentHistory()
+    {
+        var claim = CreateClaim();
+        var denied = new AssignClaimHandler(new InMemoryUnitOfWork(claim), User("claimant", ApplicationRole.Claimant, "team-a"), new FixedClock(Now));
+        await Assert.ThrowsAsync<AccessDeniedException>(() => denied.HandleAsync(new AssignClaim(claim.Id, "v1", "team-a", "claimant")));
+
+        var unit = new InMemoryUnitOfWork(claim);
+        var handler = new AssignClaimHandler(unit, User("manager-a", ApplicationRole.Manager, "team-a"), new FixedClock(Now));
+        await handler.HandleAsync(new AssignClaim(claim.Id, "v1", "team-a", "officer-a", "Initial assignment"));
+        await handler.HandleAsync(new AssignClaim(claim.Id, "v1", "team-a", "officer-b", "Reassignment"));
+        Assert.Equal("officer-b", claim.Assignment!.OfficerSubjectId);
+        Assert.Equal(2, unit.WorkflowRecords.OfType<ClaimAssignmentHistory>().Count());
+    }
+
     private static Claim CreateClaim() => new(Guid.NewGuid(), "CLM-TEST-1", "claimant-1",
         new ClaimantContactSnapshot("Demo Claimant", "claimant@example.test", null), "XXX", LineOfBusiness.Motor,
         new IncidentFacts(Now.AddDays(-1), "Synthetic test incident."), new MotorClaimDetails(), Now.AddHours(-1), Now);

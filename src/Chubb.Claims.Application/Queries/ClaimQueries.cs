@@ -28,18 +28,21 @@ public sealed record StaffAssessmentDto(DateTimeOffset RecordedAt, string Assess
     string Rationale, string? Recommendation);
 public sealed record StaffNoteDto(DateTimeOffset CreatedAt, string AuthorSubjectId, string NoteText);
 public sealed record StaffActivityDto(DateTimeOffset OccurredAt, string ActivityType, string Summary, ActivityVisibility Visibility);
+public sealed record StaffAssignmentDto(string TeamId, string? OfficerSubjectId, string AssignedBySubjectId,
+    DateTimeOffset AssignedAt, DateTimeOffset? UnassignedAt, string? Reason);
 public sealed record StaffClaimDetail(Guid ClaimId, string ClaimNumber, string MarketCode, LineOfBusiness LineOfBusiness,
     ClaimStatus Status, DateTimeOffset ReportedAt, DateTimeOffset SubmittedAt, string ClaimantSubjectId,
     ClaimantContactDto Contact, IncidentDto Incident, ClaimDetailsDto Details, string TeamId, string? OfficerSubjectId,
     MoneyEstimateDto? ReserveEstimate, StaffDecisionDto? Decision, IReadOnlyList<StaffAssessmentDto> Assessments,
     IReadOnlyList<MoneyEstimateDto> ReserveHistory, IReadOnlyList<StaffNoteDto> InternalNotes,
-    IReadOnlyList<StaffActivityDto> Activities, string Version);
+    IReadOnlyList<StaffActivityDto> Activities, string Version, IReadOnlyList<StaffAssignmentDto>? AssignmentHistory = null);
 public sealed record StaffClaimRecord(string TeamId, StaffClaimCard Card, StaffClaimDetail? Detail = null);
 public sealed record StaffQueueRecord(string TeamId, StaffClaimCard Card);
 
 public sealed record WorkQueueFilter(string? MarketCode = null, IReadOnlySet<ClaimStatus>? Statuses = null,
     string? TeamId = null, string? OfficerSubjectId = null, DateTimeOffset? SubmittedFromUtc = null,
-    DateTimeOffset? SubmittedToUtc = null, string? SearchText = null);
+    DateTimeOffset? SubmittedToUtc = null, string? SearchText = null,
+    DateTimeOffset? IncidentFromUtc = null, DateTimeOffset? IncidentToUtc = null);
 public sealed record GetClaimantClaim(Guid ClaimId);
 public sealed record ListClaimantClaims(PageRequest Page);
 public sealed record GetClaimantHistory(Guid ClaimId, PageRequest Page);
