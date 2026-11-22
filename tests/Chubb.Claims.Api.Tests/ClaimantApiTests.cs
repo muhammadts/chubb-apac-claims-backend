@@ -121,6 +121,15 @@ public sealed class ClaimantApiTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Staff_queue_forbids_claimant_role()
+    {
+        await using var factory = new TestApiFactory(new MemoryUnitOfWork(), new MemoryQueryStore());
+        using var client = AuthenticatedClient(factory, "claimant-a");
+        using var response = await client.GetAsync("/api/v1/staff/claims");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     private static HttpClient AuthenticatedClient(TestApiFactory factory, string subject)
     {
         var client = factory.CreateClient();

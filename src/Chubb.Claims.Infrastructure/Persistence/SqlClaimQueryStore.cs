@@ -51,6 +51,8 @@ public sealed class SqlClaimQueryStore(ClaimsDbContext db) : IClaimQueryStore
         if (!string.IsNullOrWhiteSpace(filter.OfficerSubjectId)) q = q.Where(x => x.Assignments.Any(a => a.UnassignedUtc == null && a.OfficerSubjectId == filter.OfficerSubjectId));
         if (filter.SubmittedFromUtc is { } from) q = q.Where(x => x.SubmittedUtc >= from);
         if (filter.SubmittedToUtc is { } to) q = q.Where(x => x.SubmittedUtc < to);
+        if (filter.IncidentFromUtc is { } incidentFrom) q = q.Where(x => x.IncidentOccurredUtc >= incidentFrom);
+        if (filter.IncidentToUtc is { } incidentTo) q = q.Where(x => x.IncidentOccurredUtc < incidentTo);
         if (!string.IsNullOrWhiteSpace(filter.SearchText)) { var term = filter.SearchText.Trim(); q = q.Where(x => x.ClaimNumber.Contains(term)); }
         if (page.After is { } after) q = q.Where(x => x.CreatedUtc < after.SortTime || (x.CreatedUtc == after.SortTime && x.ClaimId.CompareTo(after.Id) < 0));
         var rows = await q.OrderByDescending(x => x.CreatedUtc).ThenByDescending(x => x.ClaimId).Take(page.EffectivePageSize + 1).ToListAsync(cancellationToken);
@@ -91,7 +93,7 @@ public sealed class SqlClaimQueryStore(ClaimsDbContext db) : IClaimQueryStore
     }
 
     private IQueryable<ClaimRow> BaseClaims() => db.Claims.AsNoTracking().Include(x => x.MotorDetails).Include(x => x.PropertyDetails).Include(x => x.Assignments.Where(a => a.UnassignedUtc == null)).Include(x => x.InformationRequests).ThenInclude(x => x.Responses).Include(x => x.Decision).Include(x => x.Activities.Where(a => a.Visibility != ActivityVisibility.Staff));
-    private IQueryable<ClaimRow> StaffClaims(Guid[] teams) => db.Claims.AsNoTracking().Include(x => x.MotorDetails).Include(x => x.PropertyDetails).Include(x => x.Assignments.Where(a => a.UnassignedUtc == null)).Include(x => x.Decision).Include(x => x.Assessments).Include(x => x.ReserveHistory).Include(x => x.Notes).Include(x => x.Activities).Where(x => x.Assignments.Any(a => a.UnassignedUtc == null && teams.Contains(a.TeamId)));
+    private IQueryable<ClaimRow> StaffClaims(Guid[] teams) => db.Claims.AsNoTracking().Include(x => x.MotorDetails).Include(x => x.PropertyDetails).Include(x => x.Assignments).Include(x => x.Decision).Include(x => x.Assessments).Include(x => x.ReserveHistory).Include(x => x.Notes).Include(x => x.Activities).Where(x => x.Assignments.Any(a => a.UnassignedUtc == null && teams.Contains(a.TeamId)));
     private static ClaimAssignmentRow? Active(ClaimRow x) => x.Assignments.SingleOrDefault(a => a.UnassignedUtc == null);
     private static Guid[] ParseTeams(IReadOnlySet<string> teams) => teams.Select(x => Guid.TryParse(x, out var id) ? id : Guid.Empty).Where(x => x != Guid.Empty).ToArray();
     private static int Age(DateTimeOffset now, DateTimeOffset start) => Math.Max(0, (int)(now - start).TotalDays);
@@ -119,7 +121,8 @@ public sealed class SqlClaimQueryStore(ClaimsDbContext db) : IClaimQueryStore
             x.Assessments.Select(a => new StaffAssessmentDto(a.CreatedUtc, a.AssessorSubjectId, a.AssessmentType, a.Rationale, a.Recommendation)).ToArray(),
             x.ReserveHistory.OrderByDescending(r => r.RecordedUtc).Select(r => new MoneyEstimateDto(r.Amount, r.Currency)).ToArray(),
             x.Notes.Where(n => n.DeletedUtc == null).Select(n => new StaffNoteDto(n.CreatedUtc, n.AuthorSubjectId, n.NoteText)).ToArray(),
-            x.Activities.Select(a => new StaffActivityDto(a.OccurredUtc, a.ActivityType, a.Summary, a.Visibility)).ToArray(), Version(x)) : null;
+            x.Activities.Select(a => new StaffActivityDto(a.OccurredUtc, a.ActivityType, a.Summary, a.Visibility)).ToArray(), Version(x),
+            x.Assignments.OrderBy(a => a.AssignedUtc).Select(a => new StaffAssignmentDto(a.TeamId.ToString("D"), a.OfficerSubjectId, a.AssignedBySubjectId, a.AssignedUtc, a.UnassignedUtc, a.Reason)).ToArray()) : null;
         return new(assignment.TeamId.ToString("D"), card, item);
     }
     private static PageResult<T> Page<T>(List<ClaimRow> rows, PageRequest page, Func<ClaimRow, T> map)

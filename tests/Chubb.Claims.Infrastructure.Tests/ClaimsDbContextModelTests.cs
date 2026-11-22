@@ -32,4 +32,14 @@ public sealed class ClaimsDbContextModelTests
         Assert.Equal("rowversion", claim.FindProperty("RowVersion")?.GetColumnType());
         Assert.Equal("decimal(19,4)", claim.FindProperty("CurrentReserveAmount")?.GetColumnType());
     }
+
+    [Fact]
+    public void Claim_assignments_allow_only_one_active_assignment_per_claim()
+    {
+        var options = new DbContextOptionsBuilder<ClaimsDbContext>().UseSqlServer(string.Empty).Options;
+        using var context = new ClaimsDbContext(options);
+        var assignment = context.Model.FindEntityType("Chubb.Claims.Infrastructure.Persistence.ClaimAssignmentRow")!;
+        var index = Assert.Single(assignment.GetIndexes(), i => i.IsUnique && i.Properties.Any(p => p.Name == "ClaimId"));
+        Assert.Equal("[UnassignedUtc] IS NULL", index.GetFilter());
+    }
 }

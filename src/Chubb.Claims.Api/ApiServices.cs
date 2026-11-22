@@ -37,9 +37,19 @@ public static class ApplicationServiceRegistration
         services.AddSingleton<IClaimNumberGenerator, DemoClaimNumberGenerator>();
         services.AddScoped<ICommandHandler<SubmitClaim, ClaimCommandResult>, SubmitClaimHandler>();
         services.AddScoped<ICommandHandler<SubmitInformationResponse, ClaimCommandResult>, SubmitInformationResponseHandler>();
+        services.AddScoped<ICommandHandler<AssignClaim, ClaimCommandResult>, AssignClaimHandler>();
+        services.AddScoped<ICommandHandler<StartReview, ClaimCommandResult>, StartReviewHandler>();
+        services.AddScoped<ICommandHandler<RequestInformation, ClaimCommandResult>, RequestInformationHandler>();
+        services.AddScoped<ICommandHandler<ResumeReview, ClaimCommandResult>, ResumeReviewHandler>();
+        services.AddScoped<ICommandHandler<RecordAssessment, ClaimCommandResult>, RecordAssessmentHandler>();
+        services.AddScoped<ICommandHandler<RecordFinalDecision, ClaimCommandResult>, RecordFinalDecisionHandler>();
+        services.AddScoped<ICommandHandler<CompleteSettlementWorkflow, ClaimCommandResult>, CompleteSettlementWorkflowHandler>();
+        services.AddScoped<ICommandHandler<AddInternalNote, ClaimCommandResult>, AddInternalNoteHandler>();
         services.AddScoped<IQueryHandler<ListClaimantClaims, PageResult<ClaimantClaimCard>>, ListClaimantClaimsHandler>();
         services.AddScoped<IQueryHandler<GetClaimantClaim, ClaimantClaimDetail>, GetClaimantClaimHandler>();
         services.AddScoped<IQueryHandler<GetClaimantHistory, PageResult<ClaimantHistoryItem>>, GetClaimantHistoryHandler>();
+        services.AddScoped<IQueryHandler<ListStaffWorkQueue, PageResult<StaffClaimCard>>, ListStaffWorkQueueHandler>();
+        services.AddScoped<IQueryHandler<GetStaffClaim, StaffClaimDetail>, GetStaffClaimHandler>();
         return services;
     }
 }
