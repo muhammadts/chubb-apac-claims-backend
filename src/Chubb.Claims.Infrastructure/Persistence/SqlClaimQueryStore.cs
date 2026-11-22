@@ -59,10 +59,10 @@ public sealed class SqlClaimQueryStore(ClaimsDbContext db) : IClaimQueryStore
         return Page(rows, page, x => { var rec = ToStaffRecord(x, false); return new StaffQueueRecord(rec.TeamId, rec.Card); });
     }
 
-    public async Task<ManagerWorkloadSummary> GetManagerWorkloadAsync(IReadOnlySet<string> teamIds, CancellationToken cancellationToken = default)
+    public async Task<ManagerWorkloadSummary> GetManagerWorkloadAsync(IReadOnlySet<string> teamIds, IReadOnlySet<string> marketCodes, CancellationToken cancellationToken = default)
     {
         var teams = ParseTeams(teamIds); var now = DateTimeOffset.UtcNow;
-        var rows = await StaffClaims(teams).Where(x => x.Status != ClaimStatus.Rejected && x.Status != ClaimStatus.Settled).ToListAsync(cancellationToken);
+        var rows = await StaffClaims(teams).Where(x => marketCodes.Contains(x.MarketCode) && x.Status != ClaimStatus.Rejected && x.Status != ClaimStatus.Settled).ToListAsync(cancellationToken);
         var groups = rows.GroupBy(x => (x.MarketCode, Team: Active(x)?.TeamId.ToString("D"), Officer: Active(x)?.OfficerSubjectId))
             .Select(g => new WorkloadGroup(g.Key.MarketCode, g.Key.Team, g.Key.Officer,
                 g.GroupBy(x => x.Status).Select(s => new StatusCount(s.Key, s.Count())).ToArray(),
@@ -71,22 +71,22 @@ public sealed class SqlClaimQueryStore(ClaimsDbContext db) : IClaimQueryStore
         return new(now, groups, "Elapsed UTC days since submission: 0-7, 8-30, 31-90, 90+; reporting bands, not SLAs.");
     }
 
-    public async Task<ManagerPerformanceSummary> GetManagerPerformanceAsync(IReadOnlySet<string> teamIds, DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default)
+    public async Task<ManagerPerformanceSummary> GetManagerPerformanceAsync(IReadOnlySet<string> teamIds, IReadOnlySet<string> marketCodes, DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default)
     {
         var teams = ParseTeams(teamIds);
-        var decisions = await db.ClaimDecisions.AsNoTracking().Where(d => d.DecidedUtc >= fromUtc && d.DecidedUtc < toUtc && d.Claim.Assignments.Any(a => a.UnassignedUtc == null && teams.Contains(a.TeamId)))
+        var decisions = await db.ClaimDecisions.AsNoTracking().Where(d => d.DecidedUtc >= fromUtc && d.DecidedUtc < toUtc && marketCodes.Contains(d.Claim.MarketCode) && d.Claim.Assignments.Any(a => a.UnassignedUtc == null && teams.Contains(a.TeamId)))
             .Select(d => new { d.DecidedUtc, d.Claim.SubmittedUtc }).ToListAsync(cancellationToken);
-        var settlements = await db.ClaimSettlements.AsNoTracking().Where(s => s.CompletedUtc >= fromUtc && s.CompletedUtc < toUtc && s.Claim.Assignments.Any(a => a.TeamId != Guid.Empty && teams.Contains(a.TeamId)))
+        var settlements = await db.ClaimSettlements.AsNoTracking().Where(s => s.CompletedUtc >= fromUtc && s.CompletedUtc < toUtc && marketCodes.Contains(s.Claim.MarketCode) && s.Claim.Assignments.Any(a => a.TeamId != Guid.Empty && teams.Contains(a.TeamId)))
             .Select(s => new { CompletedUtc = s.CompletedUtc!.Value, s.Claim.SubmittedUtc }).ToListAsync(cancellationToken);
         var dDays = decisions.Select(x => (x.DecidedUtc - x.SubmittedUtc).TotalDays).ToArray(); var sDays = settlements.Select(x => (x.CompletedUtc - x.SubmittedUtc).TotalDays).ToArray();
         return new(fromUtc, toUtc, decisions.Count, Avg(dDays), Median(dDays), 0, settlements.Count, Avg(sDays), 0);
     }
 
-    public async Task<ManagerExposureSummary> GetManagerExposureAsync(IReadOnlySet<string> teamIds, CancellationToken cancellationToken = default)
+    public async Task<ManagerExposureSummary> GetManagerExposureAsync(IReadOnlySet<string> teamIds, IReadOnlySet<string> marketCodes, CancellationToken cancellationToken = default)
     {
         var included = new[] { ClaimStatus.Submitted, ClaimStatus.InReview, ClaimStatus.Assessment, ClaimStatus.AwaitingInformation, ClaimStatus.Approved };
         var teams = ParseTeams(teamIds); var now = DateTimeOffset.UtcNow;
-        var rows = await StaffClaims(teams).Where(x => included.Contains(x.Status)).ToListAsync(cancellationToken);
+        var rows = await StaffClaims(teams).Where(x => marketCodes.Contains(x.MarketCode) && included.Contains(x.Status)).ToListAsync(cancellationToken);
         var groups = rows.Where(x => x.CurrentReserveAmount.HasValue && x.CurrentReserveCurrency != null)
             .GroupBy(x => (x.MarketCode, Currency: x.CurrentReserveCurrency!)).Select(g => new ExposureGroup(g.Key.MarketCode, g.Key.Currency, g.Sum(x => x.CurrentReserveAmount!.Value), g.Count())).ToArray();
         return new(now, groups, rows.Count(x => x.CurrentReserveAmount is null), included, "Demo reserve estimate only; grouped by market and currency, with no FX conversion.");

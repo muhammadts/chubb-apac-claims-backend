@@ -28,8 +28,7 @@ public abstract class ClaimCommandHandlerBase(IClaimUnitOfWork unitOfWork, ICurr
         Guid claimId, string version, CancellationToken cancellationToken)
     {
         _ = Authorization.RequireVersion(version);
-        if (!User.Roles.Contains(ApplicationRole.ClaimsOfficer) && !User.Roles.Contains(ApplicationRole.Manager))
-            throw new AccessDeniedException("ClaimsOfficer or Manager role is required.");
+        Authorization.RequireRole(User, ApplicationRole.ClaimsOfficer);
         var actor = Authorization.RequireSubject(User);
         var tx = await UnitOfWork.BeginAsync(cancellationToken);
         try
@@ -72,6 +71,7 @@ public sealed class SubmitClaimHandler(IClaimUnitOfWork unitOfWork, ICurrentUser
     {
         Authorization.RequireRole(user, ApplicationRole.Claimant);
         var actor = Authorization.RequireSubject(user);
+        Authorization.RequireMarket(user, command.MarketCode);
         var now = clock.UtcNow;
         var claim = new Claim(command.ClaimId, claimNumbers.NextClaimNumber(now), actor, command.Contact.ToDomain(),
             command.MarketCode, command.LineOfBusiness, command.Incident.ToDomain(), command.Details.ToDomain(), command.ReportedAt, now);
@@ -101,6 +101,7 @@ public sealed class AssignClaimHandler(IClaimUnitOfWork unitOfWork, ICurrentUser
         var claim = await tx.LoadClaimAsync(command.ClaimId, command.ExpectedVersion, cancellationToken)
             ?? throw new ResourceNotFoundException("Claim was not found.");
         if (claim.Assignment is not null) Authorization.RequireTeam(user, claim.Assignment.TeamId);
+        Authorization.RequireMarket(user, claim.MarketCode);
         if (!string.IsNullOrWhiteSpace(command.OfficerSubjectId) && !user.Roles.Contains(ApplicationRole.Manager)
             && command.OfficerSubjectId != actor)
             throw new AccessDeniedException("An officer can assign only themselves within their team.");

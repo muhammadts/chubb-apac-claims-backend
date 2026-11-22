@@ -121,6 +121,7 @@ public sealed class GetStaffClaimHandler(IClaimQueryStore store, ICurrentUserCon
         var record = await store.FindStaffClaimAsync(query.ClaimId, user.TeamIds, cancellationToken)
             ?? throw new ResourceNotFoundException("Claim was not found.");
         Authorization.RequireTeam(user, record.TeamId);
+        Authorization.RequireMarket(user, record.Card.MarketCode);
         return record.Detail ?? throw new ResourceNotFoundException("Claim was not found.");
     }
 
@@ -139,10 +140,11 @@ public sealed class ListStaffWorkQueueHandler(IClaimQueryStore store, ICurrentUs
     {
         GetStaffClaimHandler.RequireStaff(user);
         if (query.Filter.TeamId is not null) Authorization.RequireTeam(user, query.Filter.TeamId);
+        if (query.Filter.MarketCode is not null) Authorization.RequireMarket(user, query.Filter.MarketCode);
         var page = await store.ListStaffQueueAsync(query.Filter, user.TeamIds,
             query.Page with { PageSize = query.Page.EffectivePageSize }, cancellationToken);
-        if (page.Items.Any(item => !user.TeamIds.Contains(item.TeamId)))
-            throw new AccessDeniedException("Staff queue query returned a record outside the caller's team scope.");
+        if (page.Items.Any(item => !user.TeamIds.Contains(item.TeamId) || !user.MarketCodes.Contains(item.Card.MarketCode)))
+            throw new AccessDeniedException("Staff queue query returned a record outside the caller's team or market scope.");
         return new PageResult<StaffClaimCard>(page.Items.Select(item => item.Card).ToArray(), page.Next);
     }
 }
@@ -153,12 +155,12 @@ public sealed class GetManagerWorkloadHandler(IClaimQueryStore store, ICurrentUs
     public Task<ManagerWorkloadSummary> HandleAsync(GetManagerWorkload query, CancellationToken cancellationToken = default)
     {
         RequireManager(user);
-        return store.GetManagerWorkloadAsync(user.TeamIds, cancellationToken);
+        return store.GetManagerWorkloadAsync(user.TeamIds, user.MarketCodes, cancellationToken);
     }
     internal static void RequireManager(ICurrentUserContext user)
     {
         Authorization.RequireRole(user, ApplicationRole.Manager);
-        if (user.TeamIds.Count == 0) throw new AccessDeniedException("The manager has no team scope.");
+        if (user.TeamIds.Count == 0 || user.MarketCodes.Count == 0) throw new AccessDeniedException("The manager has no team or market scope.");
     }
 }
 
@@ -169,7 +171,7 @@ public sealed class GetManagerPerformanceHandler(IClaimQueryStore store, ICurren
     {
         GetManagerWorkloadHandler.RequireManager(user);
         if (query.FromUtc >= query.ToUtc) throw new ValidationException("The reporting start must precede the reporting end.");
-        return store.GetManagerPerformanceAsync(user.TeamIds, query.FromUtc, query.ToUtc, cancellationToken);
+        return store.GetManagerPerformanceAsync(user.TeamIds, user.MarketCodes, query.FromUtc, query.ToUtc, cancellationToken);
     }
 }
 
@@ -179,6 +181,6 @@ public sealed class GetManagerExposureHandler(IClaimQueryStore store, ICurrentUs
     public Task<ManagerExposureSummary> HandleAsync(GetManagerExposure query, CancellationToken cancellationToken = default)
     {
         GetManagerWorkloadHandler.RequireManager(user);
-        return store.GetManagerExposureAsync(user.TeamIds, cancellationToken);
+        return store.GetManagerExposureAsync(user.TeamIds, user.MarketCodes, cancellationToken);
     }
 }

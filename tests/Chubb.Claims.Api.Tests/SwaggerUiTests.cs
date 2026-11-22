@@ -5,9 +5,10 @@ using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Chubb.Claims.Api.Tests;
 
-public sealed class SwaggerUiTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public sealed class SwaggerUiTests : IClassFixture<SwaggerUiTests.TestFactory>
 {
+    private readonly TestFactory factory;
+    public SwaggerUiTests(TestFactory factory) => this.factory = factory;
     [Fact]
     public async Task Development_swagger_ui_uses_existing_openapi_document_and_lists_health()
     {
@@ -35,5 +36,16 @@ public sealed class SwaggerUiTests(WebApplicationFactory<Program> factory)
         using var response = await client.GetAsync("/swagger");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    public sealed class TestFactory : WebApplicationFactory<Program>
+    {
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Development");
+            builder.UseSetting("Jwt:Issuer", "https://issuer.example.test");
+            builder.UseSetting("Jwt:Audience", "claims-api");
+            builder.UseSetting("Jwt:Authority", "https://issuer.example.test");
+        }
     }
 }

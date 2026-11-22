@@ -10,6 +10,7 @@ public interface ICurrentUserContext
     string? SubjectId { get; }
     IReadOnlySet<ApplicationRole> Roles { get; }
     IReadOnlySet<string> TeamIds { get; }
+    IReadOnlySet<string> MarketCodes { get; }
 }
 
 public interface IClock { DateTimeOffset UtcNow { get; } }
@@ -72,9 +73,9 @@ public interface IClaimQueryStore
     Task<PageResult<ClaimantHistoryRecord>> ListClaimantHistoryAsync(Guid claimId, PageRequest page, CancellationToken cancellationToken = default);
     Task<StaffClaimRecord?> FindStaffClaimAsync(Guid claimId, IReadOnlySet<string> teamIds, CancellationToken cancellationToken = default);
     Task<PageResult<StaffQueueRecord>> ListStaffQueueAsync(WorkQueueFilter filter, IReadOnlySet<string> teamIds, PageRequest page, CancellationToken cancellationToken = default);
-    Task<ManagerWorkloadSummary> GetManagerWorkloadAsync(IReadOnlySet<string> teamIds, CancellationToken cancellationToken = default);
-    Task<ManagerPerformanceSummary> GetManagerPerformanceAsync(IReadOnlySet<string> teamIds, DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default);
-    Task<ManagerExposureSummary> GetManagerExposureAsync(IReadOnlySet<string> teamIds, CancellationToken cancellationToken = default);
+    Task<ManagerWorkloadSummary> GetManagerWorkloadAsync(IReadOnlySet<string> teamIds, IReadOnlySet<string> marketCodes, CancellationToken cancellationToken = default);
+    Task<ManagerPerformanceSummary> GetManagerPerformanceAsync(IReadOnlySet<string> teamIds, IReadOnlySet<string> marketCodes, DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default);
+    Task<ManagerExposureSummary> GetManagerExposureAsync(IReadOnlySet<string> teamIds, IReadOnlySet<string> marketCodes, CancellationToken cancellationToken = default);
 }
 
 internal static class Authorization
@@ -96,6 +97,11 @@ internal static class Authorization
         if (!user.TeamIds.Contains(teamId)) throw new AccessDeniedException("The claim is outside the caller's team scope.");
     }
 
+    public static void RequireMarket(ICurrentUserContext user, string marketCode)
+    {
+        if (!user.MarketCodes.Contains(marketCode)) throw new AccessDeniedException("The claim is outside the caller's market scope.");
+    }
+
     public static string RequireVersion(string version)
     {
         if (string.IsNullOrWhiteSpace(version)) throw new ValidationException("A concurrency token is required.");
@@ -106,6 +112,7 @@ internal static class Authorization
     {
         var assignment = claim.Assignment ?? throw new AccessDeniedException("The claim has no team assignment.");
         RequireTeam(user, assignment.TeamId);
+        RequireMarket(user, claim.MarketCode);
         return assignment;
     }
 }
