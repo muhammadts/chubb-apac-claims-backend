@@ -78,9 +78,11 @@ public sealed class SqlClaimQueryStore(ClaimsDbContext db) : IClaimQueryStore
     public async Task<ManagerPerformanceSummary> GetManagerPerformanceAsync(IReadOnlySet<string> teamIds, IReadOnlySet<string> marketCodes, DateTimeOffset fromUtc, DateTimeOffset toUtc, CancellationToken cancellationToken = default)
     {
         var teams = ParseTeams(teamIds);
-        var decisions = await db.ClaimDecisions.AsNoTracking().Where(d => d.DecidedUtc >= fromUtc && d.DecidedUtc < toUtc && marketCodes.Contains(d.Claim.MarketCode) && d.Claim.Assignments.Any(a => teams.Contains(a.TeamId)))
+        var decisions = await db.ClaimDecisions.AsNoTracking().Where(d => d.DecidedUtc >= fromUtc && d.DecidedUtc < toUtc && marketCodes.Contains(d.Claim.MarketCode)
+                && d.Claim.Assignments.Any(a => teams.Contains(a.TeamId) && a.AssignedUtc <= d.DecidedUtc && (a.UnassignedUtc == null || a.UnassignedUtc > d.DecidedUtc)))
             .Select(d => new { d.DecidedUtc, d.Claim.SubmittedUtc }).ToListAsync(cancellationToken);
-        var settlements = await db.ClaimSettlements.AsNoTracking().Where(s => s.CompletedUtc >= fromUtc && s.CompletedUtc < toUtc && marketCodes.Contains(s.Claim.MarketCode) && s.Claim.Assignments.Any(a => teams.Contains(a.TeamId)))
+        var settlements = await db.ClaimSettlements.AsNoTracking().Where(s => s.CompletedUtc >= fromUtc && s.CompletedUtc < toUtc && marketCodes.Contains(s.Claim.MarketCode)
+                && s.Claim.Assignments.Any(a => teams.Contains(a.TeamId) && a.AssignedUtc <= s.CompletedUtc && (a.UnassignedUtc == null || a.UnassignedUtc > s.CompletedUtc)))
             .Select(s => new { CompletedUtc = s.CompletedUtc!.Value, s.Claim.SubmittedUtc }).ToListAsync(cancellationToken);
         var dDays = decisions.Select(x => (x.DecidedUtc - x.SubmittedUtc).TotalDays).ToArray(); var sDays = settlements.Select(x => (x.CompletedUtc - x.SubmittedUtc).TotalDays).ToArray();
         return new(fromUtc, toUtc, decisions.Count, Avg(dDays), Median(dDays), 0, settlements.Count, Avg(sDays), 0);

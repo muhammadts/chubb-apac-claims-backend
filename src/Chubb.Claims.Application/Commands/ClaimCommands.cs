@@ -65,12 +65,13 @@ public abstract class ClaimCommandHandlerBase(IClaimUnitOfWork unitOfWork, ICurr
     protected static IReadOnlyDictionary<string, string> Data(params (string Key, string Value)[] values) =>
         values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
 
-    private static bool IsPublishedEvent(string eventType) => eventType is "ClaimStatusChanged"
+    private static bool IsPublishedEvent(string eventType) => eventType is "ClaimAssigned" or "ClaimStatusChanged"
         or "ClaimInformationRequested" or "ClaimDecisionRecorded";
 
     private static IReadOnlyDictionary<string, string> SafeEventData(string eventType, IReadOnlyDictionary<string, string> data, Claim claim) =>
         eventType switch
         {
+            "ClaimAssigned" => new Dictionary<string, string> { ["claimId"] = data["claimId"], ["teamId"] = data["teamId"] },
             "ClaimStatusChanged" => new Dictionary<string, string> { ["claimId"] = claim.Id.ToString("D"), ["status"] = claim.Status.ToString() },
             "ClaimInformationRequested" => new Dictionary<string, string> { ["claimId"] = data["claimId"], ["requestId"] = data["requestId"] },
             "ClaimDecisionRecorded" => new Dictionary<string, string> { ["claimId"] = data["claimId"], ["decision"] = data["decision"], ["status"] = data["status"] },
@@ -107,34 +108,31 @@ public sealed class SubmitClaimHandler(IClaimUnitOfWork unitOfWork, ICurrentUser
 }
 
 public sealed class AssignClaimHandler(IClaimUnitOfWork unitOfWork, ICurrentUserContext user, IClock clock)
-    : ICommandHandler<AssignClaim, ClaimCommandResult>
+    : ClaimCommandHandlerBase(unitOfWork, user, clock), ICommandHandler<AssignClaim, ClaimCommandResult>
 {
     public async Task<ClaimCommandResult> HandleAsync(AssignClaim command, CancellationToken cancellationToken = default)
     {
         _ = Authorization.RequireVersion(command.ExpectedVersion);
-        var actor = Authorization.RequireSubject(user);
-        if (!user.Roles.Contains(ApplicationRole.ClaimsOfficer) && !user.Roles.Contains(ApplicationRole.Manager))
+        var actor = Authorization.RequireSubject(User);
+        if (!User.Roles.Contains(ApplicationRole.ClaimsOfficer) && !User.Roles.Contains(ApplicationRole.Manager))
             throw new AccessDeniedException("ClaimsOfficer or Manager role is required.");
-        Authorization.RequireTeam(user, command.TeamId);
-        await using var tx = await unitOfWork.BeginAsync(cancellationToken);
+        Authorization.RequireTeam(User, command.TeamId);
+        await using var tx = await UnitOfWork.BeginAsync(cancellationToken);
         var claim = await tx.LoadClaimAsync(command.ClaimId, command.ExpectedVersion, cancellationToken)
             ?? throw new ResourceNotFoundException("Claim was not found.");
-        if (claim.Assignment is not null) Authorization.RequireTeam(user, claim.Assignment.TeamId);
-        Authorization.RequireMarket(user, claim.MarketCode);
-        if (!string.IsNullOrWhiteSpace(command.OfficerSubjectId) && !user.Roles.Contains(ApplicationRole.Manager)
+        if (claim.Assignment is not null) Authorization.RequireTeam(User, claim.Assignment.TeamId);
+        Authorization.RequireMarket(User, claim.MarketCode);
+        if (!string.IsNullOrWhiteSpace(command.OfficerSubjectId) && !User.Roles.Contains(ApplicationRole.Manager)
             && command.OfficerSubjectId != actor)
             throw new AccessDeniedException("An officer can assign only themselves within their team.");
-        var now = clock.UtcNow;
+        var now = Clock.UtcNow;
         var assignment = new ClaimAssignment(command.TeamId.Trim(), command.OfficerSubjectId?.Trim(), actor, now, command.Reason?.Trim());
         claim.Assign(assignment);
         await tx.AddWorkflowRecordAsync(new ClaimAssignmentHistory(claim.Id, actor, now, assignment.TeamId,
             assignment.OfficerSubjectId, assignment.Reason), cancellationToken);
-        await tx.AddActivityAsync(new ClaimActivity(claim.Id, actor, now, "ClaimAssigned", ActivityVisibility.Staff,
-            "Claim assignment updated."), cancellationToken);
-        await tx.AddOutboxMessageAsync(new ClaimOutboxMessage(Guid.NewGuid(), claim.Id, "ClaimAssigned", 1, now,
-            new Dictionary<string, string> { ["claimId"] = claim.Id.ToString("D"), ["teamId"] = assignment.TeamId }), cancellationToken);
-        var version = await tx.CommitAsync(cancellationToken);
-        return new ClaimCommandResult(claim.Id, claim.ClaimNumber, claim.Status, version);
+        return await FinishAsync(tx, claim, actor, now, "ClaimAssigned", ActivityVisibility.Staff,
+            "Claim assignment updated.", "ClaimAssigned", Data(("claimId", claim.Id.ToString("D")),
+                ("teamId", assignment.TeamId)), cancellationToken);
     }
 }
 
