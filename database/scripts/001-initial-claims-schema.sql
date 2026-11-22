@@ -340,3 +340,14 @@ VALUES (N'20261122121945_InitialClaimsSchema', N'10.0.14');
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+CREATE INDEX [IX_ClaimSettlements_CompletedUtc_ClaimId] ON [dbo].[ClaimSettlements] ([CompletedUtc], [ClaimId]);
+
+CREATE INDEX [IX_ClaimDecisions_DecidedUtc_ClaimId] ON [dbo].[ClaimDecisions] ([DecidedUtc], [ClaimId]);
+
+INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+VALUES (N'20261122134648_ManagerReportingIndexes', N'10.0.14');
+
+COMMIT;
+GO
+

@@ -196,6 +196,8 @@ namespace Chubb.Claims.Infrastructure.Migrations
                     b.HasIndex("ClaimId")
                         .IsUnique();
 
+                    b.HasIndex("DecidedUtc", "ClaimId");
+
                     b.ToTable("ClaimDecisions", "dbo", t =>
                         {
                             t.HasCheckConstraint("CK_ClaimDecisions_AmountPair", "([DecisionAmount] IS NULL AND [DecisionCurrency] IS NULL) OR ([DecisionAmount] IS NOT NULL AND [DecisionCurrency] IS NOT NULL AND [DecisionAmount] >= 0)");
@@ -579,6 +581,8 @@ namespace Chubb.Claims.Infrastructure.Migrations
 
                     b.HasIndex("ClaimId")
                         .IsUnique();
+
+                    b.HasIndex("CompletedUtc", "ClaimId");
 
                     b.ToTable("ClaimSettlements", "dbo", t =>
                         {
