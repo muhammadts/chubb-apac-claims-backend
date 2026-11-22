@@ -52,5 +52,13 @@ public sealed class ClaimInformationRequest
     internal static ClaimInformationRequest Create(string actor, string question, DateTimeOffset at) =>
         new(Guid.NewGuid(), actor, question, at);
 
+    public static ClaimInformationRequest Rehydrate(Guid id, string actor, string question,
+        DateTimeOffset at, ClaimInformationResponse? response)
+    {
+        var request = new ClaimInformationRequest(id, actor, question, at);
+        request.Response = response;
+        return request;
+    }
+
     internal void Respond(ClaimInformationResponse response) => Response = response;
 }

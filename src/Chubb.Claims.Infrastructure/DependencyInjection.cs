@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Chubb.Claims.Application.Abstractions;
+using Chubb.Claims.Infrastructure.Persistence;
 
 namespace Chubb.Claims.Infrastructure;
 
@@ -10,14 +12,15 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("ClaimsDatabase");
-        if (string.IsNullOrWhiteSpace(connectionString))
+        services.AddDbContext<ClaimsDbContext>(options =>
         {
-            throw new InvalidOperationException(
-                "Connection string 'ClaimsDatabase' must be configured for the SQL Server provider.");
-        }
-
-        services.AddDbContext<ClaimsDbContext>(options => options.UseSqlServer(connectionString));
+            var connectionString = configuration.GetConnectionString("ClaimsDatabase");
+            if (string.IsNullOrWhiteSpace(connectionString))
+                throw new InvalidOperationException("Connection string 'ClaimsDatabase' must be configured before database operations are used.");
+            options.UseSqlServer(connectionString);
+        });
+        services.AddScoped<IClaimUnitOfWork, SqlClaimUnitOfWork>();
+        services.AddScoped<IClaimQueryStore, SqlClaimQueryStore>();
         return services;
     }
 }

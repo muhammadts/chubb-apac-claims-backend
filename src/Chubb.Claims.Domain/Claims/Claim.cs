@@ -45,6 +45,28 @@ public sealed class Claim
         Status = ClaimStatus.Submitted;
     }
 
+    /// <summary>Rebuilds a claim aggregate from its normalized persistence records.</summary>
+    public static Claim Rehydrate(Guid id, string claimNumber, string claimantSubjectId,
+        ClaimantContactSnapshot claimantContact, string marketCode, LineOfBusiness lineOfBusiness,
+        IncidentFacts incident, ClaimDetails details, DateTimeOffset reportedAt, DateTimeOffset submittedAt,
+        ClaimStatus status, ClaimAssignment? assignment, IEnumerable<ClaimInformationRequest> requests,
+        IEnumerable<ClaimAssessment> assessments, MoneyEstimate? reserveEstimate, ClaimDecision? decision,
+        ClaimSettlement? settlement)
+    {
+        var claim = new Claim(id, claimNumber, claimantSubjectId, claimantContact, marketCode,
+            lineOfBusiness, incident, details, reportedAt, submittedAt)
+        {
+            Status = status,
+            Assignment = assignment,
+            ReserveEstimate = reserveEstimate,
+            Decision = decision,
+            Settlement = settlement
+        };
+        claim._informationRequests.AddRange(requests);
+        claim._assessments.AddRange(assessments);
+        return claim;
+    }
+
     public Guid Id { get; }
     public string ClaimNumber { get; }
     public string ClaimantSubjectId { get; }

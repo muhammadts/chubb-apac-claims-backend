@@ -9,5 +9,6 @@
     <Project Path="tests/Chubb.Claims.Api.Tests/Chubb.Claims.Api.Tests.csproj" />
     <Project Path="tests/Chubb.Claims.Application.Tests/Chubb.Claims.Application.Tests.csproj" />
     <Project Path="tests/Chubb.Claims.Domain.Tests/Chubb.Claims.Domain.Tests.csproj" />
+    <Project Path="tests/Chubb.Claims.Infrastructure.Tests/Chubb.Claims.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>

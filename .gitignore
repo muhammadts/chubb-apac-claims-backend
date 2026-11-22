@@ -5,3 +5,5 @@
 *.user
 *.suo
 src/Chubb.Claims.Api/appsettings.local.json
+.tools/
+.env
