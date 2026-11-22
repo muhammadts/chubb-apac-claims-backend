@@ -161,6 +161,10 @@ public sealed class SubmitInformationResponseHandler(IClaimUnitOfWork uow, ICurr
         await using var tx = await UnitOfWork.BeginAsync(cancellationToken);
         var claim = await tx.LoadClaimAsync(command.ClaimId, command.ExpectedVersion, cancellationToken)
             ?? throw new ResourceNotFoundException("Claim was not found.");
+        if (!string.Equals(claim.ClaimantSubjectId, actor, StringComparison.Ordinal))
+            throw new ResourceNotFoundException("Claim was not found.");
+        if (!claim.InformationRequests.Any(request => request.Id == command.RequestId))
+            throw new ResourceNotFoundException("Information request was not found.");
         var now = Clock.UtcNow;
         claim.SubmitInformationResponse(command.RequestId, actor, command.ResponseText, now);
         await tx.AddWorkflowRecordAsync(new ClaimInformationResponseHistory(claim.Id, actor, now, command.RequestId, command.ResponseText), cancellationToken);
