@@ -143,6 +143,13 @@ public sealed class ApplicationHandlerTests
         await handler.HandleAsync(new AssignClaim(claim.Id, "v1", "team-a", "officer-b", "Reassignment"));
         Assert.Equal("officer-b", claim.Assignment!.OfficerSubjectId);
         Assert.Equal(2, unit.WorkflowRecords.OfType<ClaimAssignmentHistory>().Count());
+        Assert.Equal(2, unit.OutboxMessages.Count(message => message.EventType == "ClaimAssigned"));
+        Assert.All(unit.OutboxMessages.Where(message => message.EventType == "ClaimAssigned"), message =>
+        {
+            Assert.Equal(claim.Id.ToString("D"), message.Data["claimId"]);
+            Assert.Contains("teamId", message.Data.Keys);
+            Assert.DoesNotContain("officer-a", string.Join(";", message.Data.Values));
+        });
     }
 
     private static Claim CreateClaim() => new(Guid.NewGuid(), "CLM-TEST-1", "claimant-1",
