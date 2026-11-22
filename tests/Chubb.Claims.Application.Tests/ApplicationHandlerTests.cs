@@ -79,7 +79,7 @@ public sealed class ApplicationHandlerTests
         var uow = new InMemoryUnitOfWork(claim);
         var handler = new SubmitInformationResponseHandler(uow, User("intruder", ApplicationRole.Claimant), new FixedClock(Now));
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.HandleAsync(
+        await Assert.ThrowsAsync<ResourceNotFoundException>(() => handler.HandleAsync(
             new SubmitInformationResponse(claim.Id, "v1", requestId, "Response text")));
 
         Assert.Null(claim.InformationRequests.Single().Response);
